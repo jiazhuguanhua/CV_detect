@@ -120,29 +120,57 @@ class IndoorConfig(DetectorConfig):
     MIN_CONFIDENCE = 0.2
 
 class StrictRedBallConfig(DetectorConfig):
-    """严格红色球体检测配置 - 减少误检"""
+    """严格红色球体检测配置 - 减少误检但不过度严格"""
     
-    # 非常严格的颜色范围
-    LOWER_RED1 = [0, 150, 150]   # 非常高的饱和度和亮度要求
-    UPPER_RED1 = [6, 255, 255]   # 很窄的色相范围
+    # 严格但现实的颜色范围
+    LOWER_RED1 = [0, 100, 100]   # 适中的饱和度和亮度要求
+    UPPER_RED1 = [12, 255, 255]  # 稍宽的色相范围
     
-    LOWER_RED2 = [174, 150, 150] # 非常高的饱和度和亮度要求
-    UPPER_RED2 = [180, 255, 255] # 很窄的色相范围
+    LOWER_RED2 = [168, 100, 100] # 适中的饱和度和亮度要求
+    UPPER_RED2 = [180, 255, 255]
     
-    # 更严格的尺寸要求
-    MIN_RADIUS = 20
-    MAX_RADIUS = 60
-    MIN_AREA = 1000  # 更大的最小面积
+    # 合理的尺寸要求
+    MIN_RADIUS = 15
+    MAX_RADIUS = 100
+    MIN_AREA = 400  # 降低面积要求
     
-    # 超严格的Hough参数
+    # 稍严格的Hough参数
     HOUGH_DP = 1
-    HOUGH_MIN_DIST = 50
-    HOUGH_PARAM1 = 120
-    HOUGH_PARAM2 = 60    # 非常高的阈值
+    HOUGH_MIN_DIST = 40
+    HOUGH_PARAM1 = 90
+    HOUGH_PARAM2 = 40    # 降低阈值
     
-    # 最严格的置信度
-    MIN_CONFIDENCE = 0.8
+    # 平衡的置信度
+    MIN_CONFIDENCE = 0.5  # 降低置信度要求
     
-    # 更精细的处理
+    # 保持精度
     BLUR_KERNEL = 3
-    RESIZE_FACTOR = 1.0  # 不缩放，保持最高精度
+    RESIZE_FACTOR = 0.85  # 稍高的分辨率
+
+class BalancedConfig(DetectorConfig):
+    """平衡配置 - 能检测红色球体但减少误检"""
+    
+    # 平衡的颜色范围 - 包含橙红色但排除肤色
+    LOWER_RED1 = [0, 60, 60]     # 适中的要求
+    UPPER_RED1 = [20, 255, 255]  # 包含橙红色
+    
+    LOWER_RED2 = [160, 60, 60]   # 适中的要求  
+    UPPER_RED2 = [180, 255, 255]
+    
+    # 合理的尺寸要求
+    MIN_RADIUS = 10
+    MAX_RADIUS = 150
+    MIN_AREA = 250
+    
+    # 平衡的Hough参数
+    HOUGH_DP = 1
+    HOUGH_MIN_DIST = 30
+    HOUGH_PARAM1 = 60
+    HOUGH_PARAM2 = 25    # 降低要求便于检测
+    
+    # 适中的置信度
+    MIN_CONFIDENCE = 0.3
+    
+    # 保持质量
+    BLUR_KERNEL = 5
+    RESIZE_FACTOR = 0.75

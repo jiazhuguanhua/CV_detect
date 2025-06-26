@@ -14,7 +14,7 @@ from typing import List, Tuple, Optional
 from dataclasses import dataclass
 import math
 import argparse
-from config import DetectorConfig, EmbeddedConfig, HighPerformanceConfig, OutdoorConfig, IndoorConfig, StrictRedBallConfig
+from config import DetectorConfig, EmbeddedConfig, HighPerformanceConfig, OutdoorConfig, IndoorConfig, StrictRedBallConfig, BalancedConfig
 
 @dataclass
 class DetectedBall:
@@ -260,7 +260,7 @@ class OptimizedRedBallDetector:
         return current_balls
     
     def preprocess_frame(self, frame: np.ndarray) -> Tuple[np.ndarray, float]:
-        """预处理帧图像 - 改进版"""
+        """预处理帧图像 - 简化版本"""
         # 缩放图像
         if self.resize_factor != 1.0:
             frame = cv2.resize(frame, None, fx=self.resize_factor, fy=self.resize_factor)
@@ -274,47 +274,20 @@ class OptimizedRedBallDetector:
         # 转换到HSV
         hsv = cv2.cvtColor(blurred, cv2.COLOR_BGR2HSV)
         
-        # 更严格的红色检测
-        # 方法1: 传统HSV范围
-        mask1 = cv2.inRange(hsv, self.lower_red1, self.upper_red1)
+        # 自适应颜色调整
+        lower_red1, upper_red1 = self.adaptive_color_adjustment(hsv)
+        
+        # 创建红色掩码
+        mask1 = cv2.inRange(hsv, lower_red1, upper_red1)
         mask2 = cv2.inRange(hsv, self.lower_red2, self.upper_red2)
-        hsv_mask = cv2.bitwise_or(mask1, mask2)
+        mask = cv2.bitwise_or(mask1, mask2)
         
-        # 方法2: 基于BGR的红色检测（补充）
-        b, g, r = cv2.split(frame)
+        # 简化的形态学操作
+        kernel = np.ones((3, 3), np.uint8)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, kernel)
+        mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, kernel)
         
-        # 红色应该满足：R > G 且 R > B，且R值足够高
-        red_dominant = (r > g) & (r > b) & (r > 100)
-        
-        # 排除白色区域（所有通道都很高）
-        not_white = ~((r > 200) & (g > 200) & (b > 200))
-        
-        # 排除黑色区域（所有通道都很低）
-        not_black = (r > 50) | (g > 50) | (b > 50)
-        
-        bgr_mask = red_dominant & not_white & not_black
-        bgr_mask = bgr_mask.astype(np.uint8) * 255
-        
-        # 结合两种方法
-        combined_mask = cv2.bitwise_and(hsv_mask, bgr_mask)
-        
-        # 更激进的形态学操作来去除噪声
-        kernel_open = np.ones((5, 5), np.uint8)
-        kernel_close = np.ones((3, 3), np.uint8)
-        
-        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_OPEN, kernel_open)
-        combined_mask = cv2.morphologyEx(combined_mask, cv2.MORPH_CLOSE, kernel_close)
-        
-        # 去除小的连通区域
-        contours, _ = cv2.findContours(combined_mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-        filtered_mask = np.zeros_like(combined_mask)
-        
-        for contour in contours:
-            area = cv2.contourArea(contour)
-            if area > self.min_area * scale_factor * scale_factor * 0.3:  # 更严格的面积过滤
-                cv2.fillPoly(filtered_mask, [contour], 255)
-        
-        return filtered_mask, scale_factor
+        return mask, scale_factor
     
     def detect_circles_hough(self, mask: np.ndarray, scale_factor: float) -> List[DetectedBall]:
         """霍夫圆检测"""
@@ -343,10 +316,10 @@ class OptimizedRedBallDetector:
                 area = math.pi * orig_r * orig_r
                 
                 if area >= self.min_area:
-                    # 验证圆形区域的红色纯度
+                    # 验证圆形区域的红色纯度 - 降低验证严格程度
                     circularity_score = self.verify_red_circle(mask, x, y, r)
                     
-                    if circularity_score > 0.6:  # 提高阈值
+                    if circularity_score > 0.3:  # 降低阈值，从0.6改为0.3
                         confidence = circularity_score * min(1.0, area / (math.pi * self.max_radius * self.max_radius))
                         
                         if confidence >= self.min_confidence:
@@ -362,7 +335,7 @@ class OptimizedRedBallDetector:
         return balls
     
     def verify_red_circle(self, mask: np.ndarray, x: int, y: int, radius: int) -> float:
-        """验证检测到的圆形是否真的是红色球体"""
+        """验证检测到的圆形是否真的是红色球体 - 宽松版本"""
         # 创建圆形ROI
         roi_mask = np.zeros_like(mask)
         cv2.circle(roi_mask, (x, y), radius, 255, -1)
@@ -376,12 +349,16 @@ class OptimizedRedBallDetector:
         
         fill_ratio = red_pixels / circle_area
         
-        # 检查圆形的完整性 - 通过检查边缘的连续性
+        # 降低填充比例要求 - 只要有30%的区域是红色就接受
+        if fill_ratio < 0.3:
+            return 0.0
+        
+        # 检查圆形的完整性 - 但要求更宽松
         edge_completeness = self.check_circle_edge_completeness(mask, x, y, radius)
         
-        # 综合评分
-        score = fill_ratio * 0.7 + edge_completeness * 0.3
-        return score
+        # 更宽松的综合评分 - 更重视填充比例
+        score = fill_ratio * 0.8 + edge_completeness * 0.2
+        return min(1.0, score * 1.2)  # 稍微提升分数
     
     def check_circle_edge_completeness(self, mask: np.ndarray, x: int, y: int, radius: int) -> float:
         """检查圆形边缘的完整性"""
@@ -569,8 +546,8 @@ class OptimizedRedBallDetector:
 def main():
     """主函数"""
     parser = argparse.ArgumentParser(description='优化版红色球体检测器')
-    parser.add_argument('--config', choices=['default', 'embedded', 'high_perf', 'outdoor', 'indoor', 'strict'],
-                       default='default', help='选择配置预设')
+    parser.add_argument('--config', choices=['default', 'embedded', 'high_perf', 'outdoor', 'indoor', 'strict', 'balanced'],
+                       default='balanced', help='选择配置预设')
     parser.add_argument('--camera', type=int, default=0, help='摄像头ID')
     
     args = parser.parse_args()
@@ -582,7 +559,8 @@ def main():
         'high_perf': HighPerformanceConfig(),
         'outdoor': OutdoorConfig(),
         'indoor': IndoorConfig(),
-        'strict': StrictRedBallConfig()
+        'strict': StrictRedBallConfig(),
+        'balanced': BalancedConfig()
     }
     
     config = config_map[args.config]
