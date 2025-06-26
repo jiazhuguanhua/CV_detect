@@ -1,0 +1,18 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "运行红色球体检测器",
+			"type": "shell",
+			"command": "python",
+			"args": [
+				"optimized_detector.py",
+				"--config",
+				"embedded"
+			],
+			"group": "build",
+			"isBackground": false,
+			"problemMatcher": []
+		}
+	]
+}
